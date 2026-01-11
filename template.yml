@@ -1,0 +1,185 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless Job Scheduler Application
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: nodejs20.x
+    Environment:
+      Variables:
+        JOBS_TABLE: !Ref JobsTable
+        INVOCATIONS_TABLE: !Ref InvocationsTable
+        REGION: !Ref AWS::Region
+        JOB_EXECUTOR_FUNCTION_ARN: !GetAtt JobExecutorFunction.Arn
+    Architectures:
+      - arm64
+
+Resources:
+  # DynamoDB Tables
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: job-scheduler-jobs
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: jobId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: jobId
+          KeyType: HASH
+
+  InvocationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: job-scheduler-invocations
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: invocationId
+          AttributeType: S
+        - AttributeName: jobId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: invocationId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: JobIdIndex
+          KeySchema:
+            - AttributeName: jobId
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  # API Gateway
+  JobSchedulerApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+        AllowOrigin: "'*'"
+
+  # Lambda Functions
+  CreateJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/
+      Handler: createJob.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - events:PutRule
+                - events:PutTargets
+                - lambda:AddPermission
+                - lambda:InvokeFunction
+              Resource: '*'
+      Events:
+        CreateJob:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JobSchedulerApi
+            Path: /jobs
+            Method: POST
+
+  GetJobsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/
+      Handler: getJobs.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+      Events:
+        GetJobs:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JobSchedulerApi
+            Path: /jobs
+            Method: GET
+
+  GetJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/
+      Handler: getJob.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref InvocationsTable
+      Events:
+        GetJob:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JobSchedulerApi
+            Path: /jobs/{jobId}
+            Method: GET
+
+  DeleteJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/
+      Handler: deleteJob.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - events:RemoveTargets
+                - events:DeleteRule
+                - events:ListTargetsByRule
+                - lambda:RemovePermission
+              Resource: '*'
+      Events:
+        DeleteJob:
+          Type: Api
+          Properties:
+            RestApiId: !Ref JobSchedulerApi
+            Path: /jobs/{jobId}
+            Method: DELETE
+
+  JobExecutorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/handlers/
+      Handler: executeJob.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JobsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InvocationsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - events:RemoveTargets
+                - events:DeleteRule
+                - lambda:RemovePermission
+              Resource: '*'
+
+  # Permission for EventBridge to invoke JobExecutor
+  JobExecutorInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref JobExecutorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${JobSchedulerApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+  JobsTableName:
+    Description: DynamoDB Jobs Table Name
+    Value: !Ref JobsTable
+  InvocationsTableName:
+    Description: DynamoDB Invocations Table Name
+    Value: !Ref InvocationsTable
