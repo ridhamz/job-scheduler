@@ -165,14 +165,6 @@ Resources:
                 - lambda:RemovePermission
               Resource: '*'
 
-  # Permission for EventBridge to invoke JobExecutor
-  JobExecutorInvokePermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref JobExecutorFunction
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-
 Outputs:
   ApiUrl:
     Description: API Gateway endpoint URL

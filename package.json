@@ -4,16 +4,25 @@
   "description": "Serverless Job Scheduler using AWS SAM",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest"
+  },
+  "jest": {
+    "modulePathIgnorePatterns": [
+      "<rootDir>/.aws-sam"
+    ]
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.490.0",
-    "@aws-sdk/lib-dynamodb": "^3.490.0",
     "@aws-sdk/client-eventbridge": "^3.490.0",
     "@aws-sdk/client-lambda": "^3.490.0",
+    "@aws-sdk/lib-dynamodb": "^3.490.0",
     "uuid": "^9.0.1"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "aws-sdk-client-mock": "^4.1.0",
+    "aws-sdk-client-mock-jest": "^4.1.0",
+    "jest": "^30.2.0"
+  },
   "keywords": [
     "aws",
     "lambda",
